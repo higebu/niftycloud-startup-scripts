@@ -1,0 +1,2 @@
+enable niftycloud-startup-scripts.service
+enable vmtoolsd.service

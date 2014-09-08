@@ -1,0 +1,16 @@
+[Unit]
+Description=NIFTY Cloud startup scripts
+After=network.target
+After=local-fs.target
+After=vmtoolsd.service
+Before=sshd.service
+Requires=network.target
+Requires=local-fs.target
+Requires=vmtoolsd.service
+
+[Service]
+ExecStart=/usr/share/oem/niftycloud/niftycloud_init
+Type=idle
+
+[Install]
+WantedBy=multi-user.target
