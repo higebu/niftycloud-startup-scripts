@@ -1,0 +1,70 @@
+#!/bin/bash
+VERSION="1"
+
+VMWARE_GUESTD=""
+if [ -x /usr/bin/vmtoolsd ]; then
+    VMWARE_GUESTD="/usr/bin/vmtoolsd"
+else
+    exit 1
+fi
+
+INIT=$(${VMWARE_GUESTD} --cmd 'info-get guestinfo.init' 2>&1)
+if [ $? -ne 0 ]; then
+    echo "guestinfo.init undefined!"
+    ${VMWARE_GUESTD} --cmd 'info-set guestinfo.init_result 9999'
+    exit 1
+fi
+echo "guestinfo.init: $INIT"
+
+SSH_AUTHORIZED_KEY=$(${VMWARE_GUESTD} --cmd 'info-get guestinfo.ssh_authorized_key' 2>&1)
+if [ $? -ne 0 ]; then
+    echo "guestinfo.ssh_authorized_key undefined!"
+    SSH_AUTHORIZED_KEY=""
+fi
+echo "guestinfo.ssh_authorized_key: $SSH_AUTHORIZED_KEY"
+
+USER_DATA=$(${VMWARE_GUESTD} --cmd 'info-get guestinfo.user_data' 2>&1)
+if [ $? -ne 0 ]; then
+    echo "guestinfo.user_data undefined!"
+    USER_DATA=""
+fi
+echo "guestinfo.user_data: $USER_DATA"
+
+## initialize os configuration.
+if [ $INIT == "1" ]; then
+    su -l core -c 'mkdir -p /home/core/.ssh && chmod 700 /home/core/.ssh'
+    echo $?
+    su -l core -c "echo $SSH_AUTHORIZED_KEY > /home/core/.ssh/authorized_keys"
+    if [ ${#SSH_AUTHORIZED_KEY} -gt 0 -a -f "/home/core/.ssh/authorized_keys" -a -s "/home/core/.ssh/authorized_keys" ]; then
+        cat /home/core/.ssh/authorized_keys
+    else
+        echo "ERROR : Creating instance is miss, authorized_keys is null."
+        ${VMWARE_GUESTD} --cmd 'info-set guestinfo.init_result 9999'
+        exit 1
+    fi
+    echo $?
+
+    cd /etc/ssh &&  sed -e "s/^PasswordAuthentication yes/PasswordAuthentication no/" sshd_config > sshd_config.new &&echo "PermitRootLogin without-password" >> sshd_config.new && mv -f sshd_config.new sshd_config
+
+    ${VMWARE_GUESTD} --cmd 'info-set guestinfo.init 0'
+    ${VMWARE_GUESTD} --cmd 'info-set guestinfo.log_cleanup 0'
+fi
+
+USER_DATA_FLAG=$(${VMWARE_GUESTD} --cmd 'info-get guestinfo.set_user_data')
+if [ "$USER_DATA_FLAG" == "1" ]; then
+    echo "$USER_DATA" | openssl enc -d -base64 > ~/.niftycloud_user_data
+    awk 'NR==1{print $1}' ~/.niftycloud_user_data | grep ^\#\!
+    if [ $? -eq 0 ]; then
+        tr -d "\r" < ~/.niftycloud_user_data > ~/.niftycloud_user_data1
+        mv ~/.niftycloud_user_data1 ~/.niftycloud_user_data
+        chmod 755 ~/.niftycloud_user_data
+        logger -p user.info "$(~/.niftycloud_user_data 2>&1)"
+        # logger -p user.info "execute ~/.niftycloud_user_data"
+    fi
+    ${VMWARE_GUESTD} --cmd 'info-set guestinfo.set_user_data 0'
+else
+    rm -rf ~/.niftycloud_user_data
+fi
+
+${VMWARE_GUESTD} --cmd 'info-set guestinfo.init_result 1'
+exit $?
